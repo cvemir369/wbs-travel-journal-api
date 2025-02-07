@@ -5,7 +5,10 @@ import User from "../models/User.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ErrorResponse from "../utils/ErrorResponse.js";
 
-export const signup = asyncHandler(async (req, res, next) => {
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRE = process.env.JWT_EXPIRE;
+
+export const signUp = asyncHandler(async (req, res, next) => {
   try {
     const { firstName, lastName, email, password } = req.body;
     if (await User.findOne({ email: email })) {
@@ -27,6 +30,51 @@ export const signup = asyncHandler(async (req, res, next) => {
     next(new ErrorResponse("Error creating a user", 500));
   }
 });
+
+export const signIn = asyncHandler(async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email: email });
+    if (!user) {
+      return next(new ErrorResponse("Invalid credentials", 401));
+    }
+
+    if (!password || !user.password) {
+      return next(new ErrorResponse("Invalid credentials", 401));
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return next(new ErrorResponse("Invalid credentials", 401));
+    }
+
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, {
+      expiresIn: JWT_EXPIRE,
+    });
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 24 * 60 * 60 * 1000,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/",
+    });
+
+    res.status(200).json({ success: "User signed in" });
+  } catch (err) {
+    console.error("Error signing in user:", err);
+    next(new ErrorResponse("Error signing in user", 500));
+  }
+});
+
+export const signOut = async (req, res, next) => {
+  try {
+    res.clearCookie("token");
+    res.status(200).json({ success: "User signed out" });
+  } catch (err) {
+    console.error("Error signing out user:", err);
+    next(new ErrorResponse("Error signing out user", 500));
+  }
+};
 
 // export const createPost = asyncHandler(async (req, res, next) => {
 //   const { body } = req;
